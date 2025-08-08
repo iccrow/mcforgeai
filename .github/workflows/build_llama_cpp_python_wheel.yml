@@ -25,6 +25,13 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Setup venv
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\Activate.ps1
+          python -m pip install --upgrade pip wheel build setuptools scikit-build-core cmake ninja
+
       - name: Enter MSVC dev prompt (v14.29)
         uses: ilammy/msvc-dev-cmd@v1
         with:
