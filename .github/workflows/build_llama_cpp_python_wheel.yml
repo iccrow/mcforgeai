@@ -25,11 +25,13 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: List MSVC toolsets (full)
-        shell: pwsh
-        run: |
-          Get-ChildItem -Directory "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*" |
-            Select-Object -ExpandProperty FullName
+      - name: Enter MSVC dev prompt (v14.29)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+        env:
+          VCToolsVersion: 14.29.30133
+          
       - name: Setup Cuda
         uses: Jimver/cuda-toolkit@v0.2.24
         id: cuda-toolkit
