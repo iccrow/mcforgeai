@@ -48,26 +48,31 @@ jobs:
         id: cuda-toolkit
         with:
           cuda: '11.8.0'
-      
-      - name: Create venv
+
+      - name: Put CUDA on PATH + verify
         shell: pwsh
         run: |
-          python -m venv .venv
-          .\.venv\Scripts\Activate.ps1
-          python -m pip install --upgrade pip wheel build setuptools scikit-build-core cmake ninja
+          "$('${{ steps.cuda-toolkit.outputs.CUDA_PATH }}')\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe" --version
 
-      - name: Build wheel (CUDA 11.8)
+      - name: Build wheel (CUDA 11.8, v142, Ninja)
         shell: pwsh
         env:
-          FORCE_CMAKE: "1"
-          CMAKE_ARGS: "-DGGML_CUDA=on -DLLAMA_AVX=off -DLLAMA_AVX2=off -DLLAMA_FMA=off"
-          CMAKE_GENERATOR_TOOLSET: "v142"
-          CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+          # make CMake pick Ninja and CUDA
+          CMAKE_GENERATOR: "Ninja"
+          CMAKE_ARGS: "-DGGML_CUDA=on"
+          # ensure nvcc & host compiler are the ones we want
+          CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe"
+          CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe"
           CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
+          # toolset + venv bits
+          FORCE_CMAKE: "1"
+          CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
         run: |
           .\.venv\Scripts\Activate.ps1
           where cl
-          python -m pip wheel llama-cpp-python==0.3.14 -w dist
+          where nvcc
+          python -m pip wheel llama-cpp-python==0.3.14 -w dist --verbose
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
