@@ -1,56 +1,60 @@
-# This is a basic workflow to help you get started with Actions
-
 name: Python LLaMa CPP Python CMake
 
-# Controls when the workflow will run
 on:
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
     runs-on: windows-2022
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Setup venv
+      - name: Setup venv + build deps
         shell: pwsh
         run: |
           python -m venv .venv
           .\.venv\Scripts\Activate.ps1
           python -m pip install --upgrade pip wheel build setuptools scikit-build-core cmake ninja
 
-      - name: Enter MSVC dev prompt (v14.29)
-        uses: ilammy/msvc-dev-cmd@v1
+      # MSVC dev environment pinned to v142 (14.29) so CUDA 11.8 is compatible
+      - name: MSVC dev env (v142 / 14.29)
+        uses: TheMrMilchmann/setup-msvc-dev@v3
         with:
           arch: x64
-        env:
-          VCToolsVersion: 14.29.30133
+          toolset: 14.29.30133
+          # sdk: 10.0.26100.0  # optional: pin Windows SDK if you want
 
-      - name: Pin PATH to MSVC 14.29 bin
-        shell: pwsh
-        run: |
-          $v142="C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64"
-          echo "Adding $v142 to PATH (front)"
-          echo "$v142;$env:PATH" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      # - name: Verify msvc
+      # Clean up INCLUDE/LIB/LIBPATH to ensure 14.29 wins (prevents v14.44 headers)
+      # - name: Sanitize MSVC env to v142 only
       #   shell: pwsh
-      #   run: cl.exe /Bv
-          
-      - name: Setup Cuda
+      #   run: |
+      #     $msvc142 = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.29.30133"
+      #     $sdkDir  = "$env:WindowsSdkDir".TrimEnd('\')
+      #     $sdkVer  = "$env:WindowsSDKVersion".TrimEnd('\')
+      #     $auxInc  = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\VS\include"
+
+      #     $env:INCLUDE  = "$msvc142\include;$auxInc;$sdkDir\include\$sdkVer\ucrt;$sdkDir\include\$sdkVer\um;$sdkDir\include\$sdkVer\shared;$sdkDir\include\$sdkVer\winrt;$sdkDir\include\$sdkVer\cppwinrt"
+      #     $env:LIB      = "$msvc142\lib\x64;$sdkDir\lib\$sdkVer\ucrt\x64;$sdkDir\lib\$sdkVer\um\x64"
+      #     $env:LIBPATH  = "$msvc142\lib\x64;$msvc142\lib\x86\store\references;$sdkDir\UnionMetadata\$sdkVer;$sdkDir\References\$sdkVer;C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
+
+      #     "INCLUDE=$($env:INCLUDE)"   | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "LIB=$($env:LIB)"           | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "LIBPATH=$($env:LIBPATH)"   | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "VCToolsVersion=14.29.30133"              | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "VCToolsInstallDir=$msvc142\"             | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Verify MSVC toolset
+        shell: pwsh
+        run: cl.exe /Bv
+
+      - name: Setup CUDA 11.8 (network)
         uses: Jimver/cuda-toolkit@v0.2.24
         id: cuda-toolkit
         with:
@@ -66,20 +70,24 @@ jobs:
       - name: Build wheel (CUDA 11.8, v142, Ninja)
         shell: pwsh
         env:
-          # make CMake pick Ninja and CUDA
+          # Use Ninja (don’t use CMAKE_GENERATOR_TOOLSET here)
           CMAKE_GENERATOR: "Ninja"
           CMAKE_ARGS: "-DGGML_CUDA=on"
-          # ensure nvcc & host compiler are the ones we want
-          CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
-          CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
+          # Ensure nvcc + host compiler are exactly what we want
+          CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe"
+          CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe"
           CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
-          # toolset + venv bits
+          # Helpful extras
           FORCE_CMAKE: "1"
           CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+          CUDAARCHS: "75;86"     # tweak to your audience; remove to auto-detect
         run: |
           .\.venv\Scripts\Activate.ps1
-          where cl
-          where nvcc
+          echo "=== where cl ==="; where cl
+          echo "=== cl /Bv ==="; cl /Bv
+          echo "=== where nvcc ==="; where nvcc
+          echo "=== INCLUDE ==="; echo $env:INCLUDE
+          echo "=== LIB ==="; echo $env:LIB
           python -m pip wheel llama-cpp-python==0.3.14 -w dist --verbose
 
       - name: Upload wheel
