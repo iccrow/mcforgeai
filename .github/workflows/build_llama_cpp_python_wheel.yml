@@ -50,9 +50,9 @@ jobs:
       #     "VCToolsVersion=14.29.30133"              | Out-File -FilePath $env:GITHUB_ENV -Append
       #     "VCToolsInstallDir=$msvc142\"             | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Verify MSVC toolset
-        shell: pwsh
-        run: cl.exe /Bv
+      # - name: Verify MSVC toolset
+      #   shell: pwsh
+      #   run: cl.exe /Bv
 
       - name: Setup CUDA 11.8 (network)
         uses: Jimver/cuda-toolkit@v0.2.24
