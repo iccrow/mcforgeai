@@ -55,6 +55,7 @@ jobs:
         id: cuda-toolkit
         with:
           cuda: '11.8.0'
+          method: 'network'
 
       - name: Put CUDA on PATH + verify
         shell: pwsh
@@ -69,8 +70,8 @@ jobs:
           CMAKE_GENERATOR: "Ninja"
           CMAKE_ARGS: "-DGGML_CUDA=on"
           # ensure nvcc & host compiler are the ones we want
-          CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe"
-          CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe"
+          CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
+          CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
           CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
           # toolset + venv bits
           FORCE_CMAKE: "1"
