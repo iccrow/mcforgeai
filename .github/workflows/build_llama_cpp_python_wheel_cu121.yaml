@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
@@ -26,38 +26,65 @@ jobs:
           .\.venv\Scripts\Activate.ps1
           python -m pip install --upgrade pip wheel build setuptools scikit-build-core cmake ninja
 
+      # Keep v142 (14.29) for CUDA 12.1 compatibility with MSVC
+      - name: MSVC dev env (v142 / 14.29)
+        uses: TheMrMilchmann/setup-msvc-dev@v3
+        with:
+          arch: x64
+          toolset: 14.29.30133
+          # sdk: 10.0.26100.0  # optional: pin Windows SDK
+
+      # (Optional) If you still see 14.44 headers leaking, uncomment this env sanitize step
+      # - name: Sanitize MSVC env to v142 only
+      #   shell: pwsh
+      #   run: |
+      #     $msvc142 = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.29.30133"
+      #     $sdkDir  = "$env:WindowsSdkDir".TrimEnd('\')
+      #     $sdkVer  = "$env:WindowsSDKVersion".TrimEnd('\')
+      #     $auxInc  = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\VS\include"
+      #     $env:INCLUDE="$msvc142\include;$auxInc;$sdkDir\include\$sdkVer\ucrt;$sdkDir\include\$sdkVer\um;$sdkDir\include\$sdkVer\shared;$sdkDir\include\$sdkVer\winrt;$sdkDir\include\$sdkVer\cppwinrt"
+      #     $env:LIB="$msvc142\lib\x64;$sdkDir\lib\$sdkVer\ucrt\x64;$sdkDir\lib\$sdkVer\um\x64"
+      #     $env:LIBPATH="$msvc142\lib\x64;$msvc142\lib\x86\store\references;$sdkDir\UnionMetadata\$sdkVer;$sdkDir\References\$sdkVer;C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
+      #     "INCLUDE=$($env:INCLUDE)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "LIB=$($env:LIB)"         | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "LIBPATH=$($env:LIBPATH)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     "VCToolsVersion=14.29.30133"  | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Swap CUDA to 12.1.x
       - name: Setup CUDA 12.1 (network)
         uses: Jimver/cuda-toolkit@v0.2.24
         id: cuda-toolkit
         with:
-          cuda: '12.1.0'
+          cuda: '12.1.1'   # or '12.1.0' if you prefer
           method: 'network'
 
       - name: Put CUDA on PATH + verify
         shell: pwsh
         run: |
           "$('${{ steps.cuda-toolkit.outputs.CUDA_PATH }}')\\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          & "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe" --version
+          & "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\bin\nvcc.exe" --version
 
-      - name: Build wheel (CUDA 12.1, Ninja)
+      - name: Build wheel (CUDA 12.1, v142, Ninja)
         shell: pwsh
         env:
-          # Use Ninja (don’t use CMAKE_GENERATOR_TOOLSET here)
           CMAKE_GENERATOR: "Ninja"
           CMAKE_ARGS: "-DGGML_CUDA=on"
-          # Ensure nvcc + host compiler are exactly what we want
-          # CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
-          # CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
-          # Helpful extras
+          CUDACXX: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
+          CMAKE_CUDA_COMPILER: "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
+          CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
           FORCE_CMAKE: "1"
-          # CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
-
+          CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+          # Optional: target specific SMs (else let it auto-detect)
+          # CUDAARCHS: "75;86"
         run: |
           .\.venv\Scripts\Activate.ps1
+          echo "=== where cl ==="; where cl
+          echo "=== cl /Bv ==="; cl /Bv
+          echo "=== where nvcc ==="; where nvcc
           python -m pip wheel llama-cpp-python==0.3.14 -w dist --verbose
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-windows-py310-cuda118
+          name: wheels-windows-py310-cuda121
           path: dist/*.whl
