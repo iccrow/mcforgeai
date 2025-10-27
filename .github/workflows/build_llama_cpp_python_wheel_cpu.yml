@@ -1,0 +1,51 @@
+name: Python LLaMa CPP Python CMake (Windows CPU-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup venv + build deps
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\Activate.ps1
+          python -m pip install --upgrade pip wheel build setuptools scikit-build-core cmake ninja
+
+      # Keep v142 (14.29) for compatibility with MSVC-based builds if needed
+      - name: MSVC dev env (v142 / 14.29)
+        uses: TheMrMilchmann/setup-msvc-dev@v3
+        with:
+          arch: x64
+          toolset: 14.29.30133
+          # sdk: 10.0.26100.0  # optional: pin Windows SDK
+
+      - name: Build wheel (CPU-only, v142, Ninja)
+        shell: pwsh
+        env:
+          CMAKE_GENERATOR: "Ninja"
+          # Disable CUDA so a CPU-only wheel is produced
+          CMAKE_ARGS: "-DGGML_CUDA=off -DGGML_OPENCL=off"
+          FORCE_CMAKE: "1"
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          echo "=== where cl ==="; where cl
+          echo "=== cl /Bv ==="; cl /Bv
+          python -m pip wheel llama-cpp-python==0.3.14 -w dist --verbose
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-py310-cpu
+          path: dist/*.whl
