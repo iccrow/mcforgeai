@@ -32,7 +32,7 @@ jobs:
       - name: Install Vulkan SDK (via Chocolatey)
         shell: pwsh
         run: |
-          choco install vulkan-sdk --version=1.2.162.0 -y
+          choco install vulkan-sdk -y
           # Add Vulkan bin folder to PATH
           "$env:ProgramFiles\VulkanSDK\1.2.162.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
 
