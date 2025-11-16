@@ -40,8 +40,10 @@ jobs:
           CMAKE_GENERATOR: "Ninja"
           CMAKE_ARGS: "-DGGML_VULKAN=ON"
           FORCE_CMAKE: "1"
-          # GLSLC executable for Vulkan shader compilation
-          VULKAN_GLSLC_EXECUTABLE: "C:/Program Files/VulkanSDK/1.3.261.1/Bin/glslc.exe"
+          VULKAN_SDK: "D:/a/mcforgeai/mcforgeai/VULKAN_SDK"
+          Vulkan_INCLUDE_DIR: "D:/a/mcforgeai/mcforgeai/VULKAN_SDK/include"
+          Vulkan_LIBRARY: "D:/a/mcforgeai/mcforgeai/VULKAN_SDK/lib/vulkan-1.lib"
+          VULKAN_GLSLC_EXECUTABLE: "D:/a/mcforgeai/mcforgeai/VULKAN_SDK/bin/glslc.exe"
         run: |
           .\.venv\Scripts\Activate.ps1
           python -m pip wheel llama-cpp-python==0.3.14 -w dist --verbose
