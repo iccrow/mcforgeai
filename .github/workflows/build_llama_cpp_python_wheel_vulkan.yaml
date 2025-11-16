@@ -2,9 +2,6 @@ name: Python LLaMa CPP Python CMake Vulkan
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
@@ -33,12 +30,18 @@ jobs:
           toolset: 14.29.30133
 
       # Install Vulkan SDK (network install)
-      - name: Install Vulkan SDK
+      - name: Install Vulkan SDK (direct download)
         shell: pwsh
         run: |
-          choco install vulkan-sdk --version=1.3.261.1 -y
+          $VulkanVersion = "1.3.261.1"
+          $VulkanUrl = "https://sdk.lunarg.com/sdk/download/$VulkanVersion/windows/VulkanSDK-$VulkanVersion-Installer.exe"
+          $Installer = "$env:RUNNER_TEMP\VulkanSDK-$VulkanVersion-Installer.exe"
+          Invoke-WebRequest -Uri $VulkanUrl -OutFile $Installer
+          Start-Process -FilePath $Installer -ArgumentList "/S" -Wait
           # Add Vulkan bin to PATH
-          "$env:ChocolateyInstall\lib\vulkan-sdk\tools\vulkan-sdk\1.3.261.1\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+          $VulkanBin = "C:\VulkanSDK\$VulkanVersion\Bin"
+          "$VulkanBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+
 
       - name: Build wheel (Vulkan, v142, Ninja)
         shell: pwsh
