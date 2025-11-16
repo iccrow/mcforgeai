@@ -29,16 +29,18 @@ jobs:
           arch: x64
           toolset: 14.29.30133
 
-      - name: Install Vulkan SDK (via Chocolatey)
+      - name: Install Vulkan SDK (portable)
         shell: pwsh
         run: |
-          # Download latest Vulkan SDK for Windows x64
-          $Installer = "$env:RUNNER_TEMP\vulkansdk-installer.exe"
-          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe" -OutFile $Installer
-          Start-Process -FilePath $Installer -ArgumentList "/S" -Wait
-          
-          # Then add to PATH
-          "$env:VULKAN_SDK\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+          # Download latest Vulkan SDK zip (x64)
+          $Zip = "$env:RUNNER_TEMP\vulkan-sdk.zip"
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/latest/windows/VulkanSDK.zip" -OutFile $Zip
+      
+          # Extract to C:\VulkanSDK
+          Expand-Archive -Path $Zip -DestinationPath "C:\VulkanSDK"
+      
+          # Add Vulkan bin to PATH
+          "C:\VulkanSDK\1.3.261.1\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
 
 
       - name: Build wheel (Vulkan, v142, Ninja)
