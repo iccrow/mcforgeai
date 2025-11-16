@@ -1,0 +1,67 @@
+name: Build PyTorch Windows Vulkan (pip wheel)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    env:
+      PYTHON_VERSION: 3.10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup venv + build deps
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\Activate.ps1
+          python -m pip install --upgrade pip wheel setuptools cmake ninja
+
+      - name: MSVC dev env (v142 / 14.29)
+        uses: TheMrMilchmann/setup-msvc-dev@v3
+        with:
+          arch: x64
+          toolset: 14.29.30133
+
+      - name: Install Vulkan SDK and Runtime
+        uses: jakoch/install-vulkan-sdk-action@v1.2.8
+
+      - name: Configure PyTorch environment
+        shell: pwsh
+        env:
+          USE_VULKAN: 1
+          USE_CUDA: 0
+          BUILD_SHARED_LIBS: 1
+          CMAKE_GENERATOR: Ninja
+          # Set version override for pip wheel
+          SETUPTOOLS_SCM_PRETEND_VERSION: "2.4.1+vulkan"
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          git clone https://github.com/pytorch/pytorch.git
+          cd pytorch
+          git fetch --tags
+          git checkout v2.4.1
+          git submodule sync
+          git submodule update --init --recursive
+
+      - name: Build PyTorch wheel with pip
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          cd pytorch
+          python -m pip wheel . -w dist --verbose
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-windows-vulkan
+          path: pytorch/dist/*.whl
