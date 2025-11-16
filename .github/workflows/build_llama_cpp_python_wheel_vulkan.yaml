@@ -32,9 +32,13 @@ jobs:
       - name: Install Vulkan SDK (via Chocolatey)
         shell: pwsh
         run: |
-          choco install vulkan-sdk -y
-          # Add Vulkan bin folder to PATH
-          "$env:ProgramFiles\VulkanSDK\1.2.162.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+          # Download latest Vulkan SDK for Windows x64
+          $Installer = "$env:RUNNER_TEMP\vulkansdk-installer.exe"
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe" -OutFile $Installer
+          Start-Process -FilePath $Installer -ArgumentList "/S" -Wait
+          
+          # Then add to PATH
+          "$env:VULKAN_SDK\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
 
 
       - name: Build wheel (Vulkan, v142, Ninja)
