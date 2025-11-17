@@ -22,35 +22,35 @@ jobs:
           # manylinux image uses yum (CentOS7)
           RUN yum -y update && \
               yum -y install epel-release && \
-              yum -y install wget tar gzip bzip2 gcc gcc-c++ make cmake automake autoconf libtool \
+              yum -y install yum-utils wget tar gzip bzip2 gcc gcc-c++ make cmake automake autoconf libtool \
                              python3 python3-devel python3-pip which && \
               yum clean all
 
-          # --- Install CUDA Toolkit 12.1.x (toolkit + nvcc) ---
-          # NOTE: We use the NVIDIA runfile installer to keep this self-contained.
-          # You can change CUDA_VERSION to another exact 12.1.x if required.
+          # --- Install CUDA Toolkit 12.1.x via NVIDIA YUM repo (RHEL7/CentOS7) ---
+          # This avoids the interactive runfile and is more reliable in CI.
+          ENV CUDA_MAJOR=12.1
+          ENV CUDA_FULL=12.1.1
 
-          ENV CUDA_VERSION=12.1.1
-          ENV CUDA_RUNFILE_URL=https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/cuda_${CUDA_VERSION}_linux.run
-
-          # Download and install (silent). This may be slow.
+          # Add NVIDIA CUDA yum repo for RHEL7 and import the GPG key
           RUN set -ex \
-              && cd /tmp \
-              && wget -q --tries=5 "${CUDA_RUNFILE_URL}" -O cuda.run \
-              && chmod +x cuda.run \
-              # install only toolkit and driver components that don't require GPUs; accept license
-              && sh cuda.run --silent --toolkit --override --installpath=/opt/cuda-${CUDA_VERSION} \
-              && rm -f cuda.run
+            && yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo \
+            && rpm --import https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/7fa2af80.pub || true \
+            && yum -y clean all \
+            && yum -y makecache fast
 
-          # Symlink a stable path
-          RUN ln -sfn /opt/cuda-${CUDA_VERSION} /opt/cuda
+          # Try to install a matching cuda-toolkit package. The package naming can differ across minor releases,
+          # so we try a few possibilities (if one fails, the next is attempted).
+          RUN set -ex \
+            && yum -y install "cuda-toolkit-12-1" || yum -y install "cuda-toolkit-${CUDA_FULL}" || yum -y install "cuda-toolkit-${CUDA_MAJOR}" || true \
+            && # ensure /usr/local/cuda exists (standard path for NVIDIA toolchains)
+            if [ -d /usr/local/cuda-${CUDA_FULL%.*} ]; then ln -sfn /usr/local/cuda-${CUDA_FULL%.*} /opt/cuda; \
+            elif [ -d /usr/local/cuda ]; then ln -sfn /usr/local/cuda /opt/cuda; \
+            else echo "Warning: cuda not found after yum install"; fi
 
           # Put nvcc and libs on PATH / LD_LIBRARY_PATH
           ENV PATH=/opt/cuda/bin:$PATH
           ENV LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
           ENV CUDA_HOME=/opt/cuda
-
-          # OPTIONAL: reduce dynamic deps by linking libstdc++/libgcc statically during build by using flags later
 
           # Create build user and set workspace
           RUN useradd -m builder
@@ -72,8 +72,8 @@ jobs:
           # we mount the workspace into /work so outputs can be copied back
           docker run --rm -v "${{ github.workspace }}":/work -w /work manylinux2014-cuda:12.1 /bin/bash -lc "\
             set -ex ; \
-            # ensure nvcc visible \
-            /opt/cuda/bin/nvcc --version || true ; \
+            # ensure nvcc visible (best-effort) \
+            if [ -x /opt/cuda/bin/nvcc ]; then /opt/cuda/bin/nvcc --version; else echo 'nvcc not found in /opt/cuda/bin'; fi ; \
             # move into repo root (mounted) and create out dir \
             mkdir -p build && cd build ; \
             # Configure CMake: build shared libs, enable CUDA, and attempt to statically link libstdc++/libgcc
@@ -88,7 +88,7 @@ jobs:
             # collect artifacts into /work/artifact (bound to host workspace) \
             mkdir -p /work/artifact_manylinux_cuda ; \
             find . -type f -name 'libllama*' -o -name 'llama*' | xargs -I{} cp --parents {} /work/artifact_manylinux_cuda/ || true ; \
-            # also copy useful runtime files if present \
+            # also copy useful runtime files if present (optional) \
             cp -v /opt/cuda/lib64/*cudart* /work/artifact_manylinux_cuda/ 2>/dev/null || true ; \
             ls -la /work/artifact_manylinux_cuda ; \
           "
