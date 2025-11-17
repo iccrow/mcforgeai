@@ -53,25 +53,25 @@ jobs:
           CUDACXX: "${{ steps.cuda.outputs.CUDA_PATH }}\bin\nvcc.exe"
           CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
         run: |
-          # Prepare build directory
           if (-Not (Test-Path -Path build)) { New-Item -ItemType Directory -Path build | Out-Null }
           Push-Location build
 
-          # Configure CMake explicitly pointing to source
           $sourceDir = Join-Path $PWD "..\src\llama.cpp"
-          cmake -G "Ninja" -S $sourceDir -B . `
+
+          cmake -G "Ninja" -S "$sourceDir" -B . `
             -DLLAMA_BUILD_SHARED_LIBS=ON `
             -DLLAMA_CUDA=ON `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CUDA_COMPILER="$env:CMAKE_CUDA_COMPILER" `
-            -DCMAKE_CUDA_HOST_COMPILER="$env:CMAKE_CUDA_HOST_COMPILER"
+            -DCMAKE_CUDA_COMPILER="$($env:CMAKE_CUDA_COMPILER)" `
+            -DCUDACXX="$($env:CUDACXX)" `
+            -DCMAKE_CUDA_HOST_COMPILER="$($env:CMAKE_CUDA_HOST_COMPILER)"
 
-          # Build
           $nproc = $env:NUMBER_OF_PROCESSORS
           if (-not $nproc) { $nproc = 2 }
           cmake --build . --config Release -- -j $nproc
 
           Pop-Location
+
 
       - name: Collect artifacts
         shell: pwsh
