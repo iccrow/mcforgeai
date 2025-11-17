@@ -1,6 +1,5 @@
 name: Build llama.cpp (manylinux2014 + CUDA)
 
-# Manual trigger
 on:
   workflow_dispatch:
 
@@ -15,89 +14,56 @@ jobs:
       - name: Create manylinux+CUDA Dockerfile
         run: |
           cat > Dockerfile.manylinux_cuda <<'EOF'
-          # manylinux2014_x86_64 base (CentOS7-based policy image)
           FROM quay.io/pypa/manylinux2014_x86_64:latest
 
-          # Install packages used to install CUDA and for building
-          # manylinux image uses yum (CentOS7)
           RUN yum -y update && \
               yum -y install epel-release && \
               yum -y install yum-utils wget tar gzip bzip2 gcc gcc-c++ make cmake automake autoconf libtool \
                              python3 python3-devel python3-pip which && \
               yum clean all
 
-          # --- Install CUDA Toolkit 12.1.x via NVIDIA YUM repo (RHEL7/CentOS7) ---
+          # Install CUDA 12.1 via NVIDIA repo
           ENV CUDA_MAJOR=12.1
           ENV CUDA_FULL=12.1.1
 
-          # Add NVIDIA CUDA yum repo for RHEL7 and import the GPG key
-          RUN set -ex \
-            && yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo \
-            && rpm --import https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/7fa2af80.pub || true \
-            && yum -y clean all \
-            && yum -y makecache fast
+          RUN yum-config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo \
+              && rpm --import https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/7fa2af80.pub \
+              && yum -y install "cuda-toolkit-12-1" || true
 
-          # Try to install a matching cuda-toolkit package (try a few names)
-          RUN set -ex \
-            && (yum -y install "cuda-toolkit-12-1" || yum -y install "cuda-toolkit-${CUDA_FULL}" || yum -y install "cuda-toolkit-${CUDA_MAJOR}" || true)
-
-          # Ensure /opt/cuda points to the installed CUDA (do this inside another RUN)
-          RUN set -ex && \
-            if [ -d "/usr/local/cuda-${CUDA_FULL%.*}" ]; then ln -sfn "/usr/local/cuda-${CUDA_FULL%.*}" /opt/cuda; \
-            elif [ -d "/usr/local/cuda" ]; then ln -sfn /usr/local/cuda /opt/cuda; \
-            else echo "Warning: cuda not found after yum install"; fi
-
-          # Put nvcc and libs on PATH / LD_LIBRARY_PATH
+          RUN ln -sfn /usr/local/cuda /opt/cuda
           ENV PATH=/opt/cuda/bin:$PATH
           ENV LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
           ENV CUDA_HOME=/opt/cuda
 
-          # Create build user and set workspace
+          # Create builder user
           RUN useradd -m builder
           USER builder
           WORKDIR /home/builder/work
-
           EOF
 
       - name: Build Docker image (manylinux + CUDA)
-        run: |
-          docker build -t manylinux2014-cuda:12.1 -f Dockerfile.manylinux_cuda .
+        run: docker build -t manylinux2014-cuda:12.1 -f Dockerfile.manylinux_cuda .
 
       - name: Run container and build llama.cpp
         run: |
-          docker run --rm --user root \
-            -v "${{ github.workspace }}":/work \
-            -w /work manylinux2014-cuda:12.1 /bin/bash -lc "\
-              set -ex ; \
-              # verify nvcc \
-              if [ -x /opt/cuda/bin/nvcc ]; then /opt/cuda/bin/nvcc --version; else echo 'nvcc not found'; fi ; \
-              # set source and build directories \
-              SRC_DIR=/work/src/llama.cpp ; \
-              BUILD_DIR=/work/build ; \
-              mkdir -p \$BUILD_DIR ; \
-              # configure cmake with explicit source/build dirs \
-              cmake -G Ninja -S \$SRC_DIR -B \$BUILD_DIR \
-                -DLLAMA_BUILD_SHARED_LIBS=ON \
-                -DLLAMA_CUDA=ON \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_FLAGS='-static-libstdc++ -static-libgcc' \
-                -DCMAKE_EXE_LINKER_FLAGS='-Wl,-Bsymbolic' ; \
-              cmake --build \$BUILD_DIR --config Release -j\$(nproc) ; \
-              # copy artifacts \
-              mkdir -p /work/artifact_manylinux_cuda ; \
-              find \$BUILD_DIR -type f -name 'libllama*' -o -name 'llama*' -print0 | xargs -0 -I{} cp --parents {} /work/artifact_manylinux_cuda/ || true ; \
-              cp -v /opt/cuda/lib64/*cudart* /work/artifact_manylinux_cuda/ 2>/dev/null || true ; \
-              ls -la /work/artifact_manylinux_cuda ; \
-            "
+          docker run --rm -v "${{ github.workspace }}":/work -w /work manylinux2014-cuda:12.1 /bin/bash -c "\
+            set -ex ; \
+            # 1) Download llama.cpp source \
+            git clone --depth 1 https://github.com/ggerganov/llama.cpp.git src ; \
+            cd src ; \
+            mkdir -p build ; cd build ; \
+            # 2) Configure CMake \
+            cmake .. -G Ninja -DLLAMA_BUILD_SHARED_LIBS=ON -DLLAMA_CUDA=ON -DCMAKE_BUILD_TYPE=Release ; \
+            # 3) Build \
+            cmake --build . --config Release -j$(nproc) ; \
+            # 4) Collect artifacts \
+            mkdir -p /work/artifact_manylinux_cuda ; \
+            find . -type f -name 'libllama*' -o -name 'llama*' | xargs -I{} cp --parents {} /work/artifact_manylinux_cuda/ ; \
+            ls -la /work/artifact_manylinux_cuda \
+          "
 
-      - name: List artifacts produced
-        run: ls -la artifact_manylinux_cuda || true
-
-      - name: Archive and upload artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: llama-manylinux2014-cuda12.1
           path: artifact_manylinux_cuda/**
-
-      - name: Cleanup image to save runner space
-        run: docker image rm manylinux2014-cuda:12.1 || true
