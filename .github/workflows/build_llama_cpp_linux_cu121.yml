@@ -7,22 +7,24 @@ jobs:
   build-manylinux-cuda:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-
     steps:
-      - name: Checkout workflow repo
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Clone llama.cpp locally so container has the source
+      - name: Clone llama.cpp source
+        run: |
+          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git src
 
       - name: Create manylinux+CUDA Dockerfile
         run: |
           cat > Dockerfile.manylinux_cuda <<'EOF'
           FROM quay.io/pypa/manylinux2014_x86_64:latest
-
           RUN yum -y update && \
               yum -y install epel-release && \
               yum -y install yum-utils wget tar gzip bzip2 gcc gcc-c++ make cmake automake autoconf libtool \
-                             python3 python3-devel python3-pip git which && \
+                             python3 python3-devel python3-pip which git && \
               yum clean all
-
           # Install CUDA 12.1 via NVIDIA repo
           ENV CUDA_MAJOR=12.1
           ENV CUDA_FULL=12.1.1
@@ -30,11 +32,10 @@ jobs:
               && rpm --import https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/7fa2af80.pub \
               && yum -y install "cuda-toolkit-12-1" || true
           RUN ln -sfn /usr/local/cuda /opt/cuda
-
           ENV PATH=/opt/cuda/bin:$PATH
           ENV LD_LIBRARY_PATH=/opt/cuda/lib64:$LD_LIBRARY_PATH
           ENV CUDA_HOME=/opt/cuda
-
+          # Create builder user
           RUN useradd -m builder
           USER builder
           WORKDIR /home/builder/work
@@ -45,20 +46,14 @@ jobs:
 
       - name: Run container and build llama.cpp
         run: |
-          docker run --rm -v "${{ github.workspace }}":/work -w /work manylinux2014-cuda:12.1 /bin/bash -c "\
-            set -ex ; \
-            # 1) Clone llama.cpp source \
-            git clone --depth 1 https://github.com/ggerganov/llama.cpp.git src ; \
-            cd src ; \
-            mkdir -p build ; cd build ; \
-            # 2) Configure CMake \
-            cmake .. -G Ninja -DLLAMA_BUILD_SHARED_LIBS=ON -DLLAMA_CUDA=ON -DCMAKE_BUILD_TYPE=Release ; \
-            # 3) Build \
-            cmake --build . --config Release -j$(nproc) ; \
-            # 4) Collect artifacts \
-            mkdir -p /work/artifact_manylinux_cuda ; \
-            find . -type f -name 'libllama*' -o -name 'llama*' | xargs -I{} cp --parents {} /work/artifact_manylinux_cuda/ ; \
-            ls -la /work/artifact_manylinux_cuda \
+          docker run --rm -v "${{ github.workspace }}":/work -w /work/src manylinux2014-cuda:12.1 /bin/bash -c "\
+            set -ex; \
+            mkdir -p build && cd build; \
+            cmake .. -G Ninja -DLLAMA_BUILD_SHARED_LIBS=ON -DLLAMA_CUDA=ON -DCMAKE_BUILD_TYPE=Release; \
+            cmake --build . --config Release -j$(nproc); \
+            mkdir -p /work/artifact_manylinux_cuda; \
+            find . -type f -name 'libllama*' -o -name 'llama*' | xargs -I{} cp --parents {} /work/artifact_manylinux_cuda/; \
+            ls -la /work/artifact_manylinux_cuda; \
           "
 
       - name: Upload artifact
