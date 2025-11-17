@@ -27,7 +27,6 @@ jobs:
               yum clean all
 
           # --- Install CUDA Toolkit 12.1.x via NVIDIA YUM repo (RHEL7/CentOS7) ---
-          # This avoids the interactive runfile and is more reliable in CI.
           ENV CUDA_MAJOR=12.1
           ENV CUDA_FULL=12.1.1
 
@@ -38,13 +37,14 @@ jobs:
             && yum -y clean all \
             && yum -y makecache fast
 
-          # Try to install a matching cuda-toolkit package. The package naming can differ across minor releases,
-          # so we try a few possibilities (if one fails, the next is attempted).
+          # Try to install a matching cuda-toolkit package (try a few names)
           RUN set -ex \
-            && yum -y install "cuda-toolkit-12-1" || yum -y install "cuda-toolkit-${CUDA_FULL}" || yum -y install "cuda-toolkit-${CUDA_MAJOR}" || true \
-            && # ensure /usr/local/cuda exists (standard path for NVIDIA toolchains)
-            if [ -d /usr/local/cuda-${CUDA_FULL%.*} ]; then ln -sfn /usr/local/cuda-${CUDA_FULL%.*} /opt/cuda; \
-            elif [ -d /usr/local/cuda ]; then ln -sfn /usr/local/cuda /opt/cuda; \
+            && (yum -y install "cuda-toolkit-12-1" || yum -y install "cuda-toolkit-${CUDA_FULL}" || yum -y install "cuda-toolkit-${CUDA_MAJOR}" || true)
+
+          # Ensure /opt/cuda points to the installed CUDA (do this inside another RUN)
+          RUN set -ex && \
+            if [ -d "/usr/local/cuda-${CUDA_FULL%.*}" ]; then ln -sfn "/usr/local/cuda-${CUDA_FULL%.*}" /opt/cuda; \
+            elif [ -d "/usr/local/cuda" ]; then ln -sfn /usr/local/cuda /opt/cuda; \
             else echo "Warning: cuda not found after yum install"; fi
 
           # Put nvcc and libs on PATH / LD_LIBRARY_PATH
