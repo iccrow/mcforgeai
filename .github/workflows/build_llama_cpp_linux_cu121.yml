@@ -66,32 +66,39 @@ jobs:
       - name: Run container and build llama.cpp
         env:
           # Change these as needed (path to llama.cpp in your repo)
-          LLAMA_ROOT: /work/src/llama.cpp
+          LLAMA_ROOT: /work
         run: |
-          # copy repo into container and run build steps inside it
-          # we mount the workspace into /work so outputs can be copied back
-          docker run --rm -v "${{ github.workspace }}":/work -w /work manylinux2014-cuda:12.1 /bin/bash -lc "\
-            set -ex ; \
-            # ensure nvcc visible (best-effort) \
-            if [ -x /opt/cuda/bin/nvcc ]; then /opt/cuda/bin/nvcc --version; else echo 'nvcc not found in /opt/cuda/bin'; fi ; \
-            # move into repo root (mounted) and create out dir \
-            mkdir -p build && cd build ; \
-            # Configure CMake: build shared libs, enable CUDA, and attempt to statically link libstdc++/libgcc
-            cmake .. \
-              -G Ninja \
-              -DLLAMA_BUILD_SHARED_LIBS=ON \
-              -DLLAMA_CUDA=ON \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_CXX_FLAGS='-static-libstdc++ -static-libgcc' \
-              -DCMAKE_EXE_LINKER_FLAGS='-Wl,-Bsymbolic' ; \
-            cmake --build . --config Release -j$(nproc) ; \
-            # collect artifacts into /work/artifact (bound to host workspace) \
-            mkdir -p /work/artifact_manylinux_cuda ; \
-            find . -type f -name 'libllama*' -o -name 'llama*' | xargs -I{} cp --parents {} /work/artifact_manylinux_cuda/ || true ; \
-            # also copy useful runtime files if present (optional) \
-            cp -v /opt/cuda/lib64/*cudart* /work/artifact_manylinux_cuda/ 2>/dev/null || true ; \
-            ls -la /work/artifact_manylinux_cuda ; \
-          "
+          # Run the container as root so it can write to the mounted /work directory.
+          # We use explicit -S /work -B /work/build to ensure cmake uses the correct source dir.
+          docker run --rm --user root \
+            -v "${{ github.workspace }}":/work \
+            -w /work manylinux2014-cuda:12.1 /bin/bash -lc "\
+              set -ex ; \
+              # ensure nvcc visible (best-effort) \
+              if [ -x /opt/cuda/bin/nvcc ]; then /opt/cuda/bin/nvcc --version; else echo 'nvcc not found in /opt/cuda/bin'; fi ; \
+              # ensure workspace exists and is writable \
+              mkdir -p /work && chmod -R a+rwX /work ; \
+              # prepare build dir explicitly at /work/build \
+              mkdir -p /work/build && cd /work/build ; \
+              # configure cmake with explicit source (-S) and build dir (-B) so we don't rely on '..' \
+              cmake -G Ninja -S /work -B /work/build \
+                -DLLAMA_BUILD_SHARED_LIBS=ON \
+                -DLLAMA_CUDA=ON \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_FLAGS='-static-libstdc++ -static-libgcc' \
+                -DCMAKE_EXE_LINKER_FLAGS='-Wl,-Bsymbolic' ; \
+              cmake --build /work/build --config Release -j$(nproc) ; \
+              # copy artifacts into artifact dir (still inside mounted /work so runner can pick up) \
+              mkdir -p /work/artifact_manylinux_cuda ; \
+              find /work/build -type f -name 'libllama*' -o -name 'llama*' -print0 | xargs -0 -I{} cp --parents {} /work/artifact_manylinux_cuda/ || true ; \
+              cp -v /opt/cuda/lib64/*cudart* /work/artifact_manylinux_cuda/ 2>/dev/null || true ; \
+              # make sure runner user can read them (chown to github runner UID/GID) \
+              # GitHub Actions hosted runners write workspace as uid 1001 in some images; chown to current host uid via env var is not possible inside container,
+              # but making artifacts world readable is safe in CI:
+              chmod -R a+rX /work/artifact_manylinux_cuda || true ; \
+              ls -la /work/artifact_manylinux_cuda ; \
+            "
+
 
       - name: List artifacts produced
         run: ls -la artifact_manylinux_cuda || true
