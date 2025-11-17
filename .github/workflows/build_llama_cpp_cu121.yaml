@@ -49,19 +49,49 @@ jobs:
           CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
           CUDA_PATH: ${{ steps.cuda.outputs.CUDA_PATH }}
         run: |
-          # Create build dir
-          mkdir build
-          cd build
+          set -x
 
-          # Configure - enable shared library and CUDA
-          cmake -G "Ninja" .. -DLLAMA_BUILD_SHARED_LIBS=ON -DLLAMA_CUDA=ON -DCMAKE_BUILD_TYPE=Release -S ..
+          # 1) Find CMakeLists.txt in repository (search recursively)
+          $cmakeFile = Get-ChildItem -Path . -Recurse -Filter CMakeLists.txt -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $cmakeFile) {
+            Write-Error "CMakeLists.txt not found in repository. Make sure llama.cpp (or your source) is checked out here."
+            exit 1
+          }
 
-          # Build (shared library will be named "llama" by default)
-          cmake --build . --config Release -j
+          $sourceDir = $cmakeFile.Directory.FullName
+          Write-Host "Using source directory for CMake: $sourceDir"
 
-          # Inspect output
-          echo "=== Build tree ==="
-          dir /s
+          # 2) Prepare build dir (we'll configure with -S <source> -B . to be explicit)
+          if (-Not (Test-Path -Path build)) { New-Item -ItemType Directory -Path build | Out-Null }
+          Push-Location build
+
+          # 3) Configure with cmake (explicit -S and -B). Use Ninja and enable CUDA + shared lib
+          $cmakeArgs = @(
+            "-G", "Ninja",
+            "-S", $sourceDir,
+            "-B", ".",
+            "-DLLAMA_BUILD_SHARED_LIBS=ON",
+            "-DLLAMA_CUDA=ON",
+            "-DCMAKE_BUILD_TYPE=Release"
+          )
+          # pass CUDA compiler env to cmake if available
+          if ($env:CMAKE_CUDA_COMPILER) {
+            $cmakeArgs += ("-DCMAKE_CUDA_COMPILER=$env:CMAKE_CUDA_COMPILER")
+          }
+          Write-Host "Running cmake with arguments: $($cmakeArgs -join ' ')"
+          cmake @cmakeArgs
+
+          # 4) Build
+          $nproc = $env:NUMBER_OF_PROCESSORS
+          if (-not $nproc) { $nproc = 2 }
+          Write-Host "Building with $nproc parallel jobs"
+          cmake --build . --config Release -- -j $nproc
+
+          # 5) Inspect output (PowerShell friendly)
+          Write-Host "=== Build tree (recursively from build) ==="
+          Get-ChildItem -Path . -Recurse | Select-Object FullName, Length | ForEach-Object { Write-Host $_.FullName }
+
+          Pop-Location
 
       - name: Collect artifacts (Windows)
         shell: pwsh
