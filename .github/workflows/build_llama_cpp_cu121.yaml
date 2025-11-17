@@ -61,6 +61,7 @@ jobs:
           cmake -G "Ninja" -S "$sourceDir" -B . `
             -DLLAMA_BUILD_SHARED_LIBS=ON `
             -DLLAMA_CUDA=ON `
+            -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared `
             -DLLAMA_CURL=OFF `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CUDA_COMPILER="$($env:CMAKE_CUDA_COMPILER)" `
