@@ -49,7 +49,7 @@ jobs:
         env:
           CMAKE_GENERATOR: "Ninja"
           CUDA_PATH: ${{ steps.cuda.outputs.CUDA_PATH }}
-          CMAKE_CUDA_COMPILER: "${{ steps.cuda.outputs.CUDA_PATH }}\bin\nvcc.exe"
+          CMAKE_CUDA_COMPILER: "${{ steps.cuda.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
           CUDACXX: "${{ steps.cuda.outputs.CUDA_PATH }}\\bin\\nvcc.exe"
           CMAKE_CUDA_HOST_COMPILER: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
         run: |
