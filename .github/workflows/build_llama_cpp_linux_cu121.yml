@@ -64,41 +64,31 @@ jobs:
           docker build -t manylinux2014-cuda:12.1 -f Dockerfile.manylinux_cuda .
 
       - name: Run container and build llama.cpp
-        env:
-          # Change these as needed (path to llama.cpp in your repo)
-          LLAMA_ROOT: /work
         run: |
-          # Run the container as root so it can write to the mounted /work directory.
-          # We use explicit -S /work -B /work/build to ensure cmake uses the correct source dir.
           docker run --rm --user root \
             -v "${{ github.workspace }}":/work \
             -w /work manylinux2014-cuda:12.1 /bin/bash -lc "\
               set -ex ; \
-              # ensure nvcc visible (best-effort) \
-              if [ -x /opt/cuda/bin/nvcc ]; then /opt/cuda/bin/nvcc --version; else echo 'nvcc not found in /opt/cuda/bin'; fi ; \
-              # ensure workspace exists and is writable \
-              mkdir -p /work && chmod -R a+rwX /work ; \
-              # prepare build dir explicitly at /work/build \
-              mkdir -p /work/build && cd /work/build ; \
-              # configure cmake with explicit source (-S) and build dir (-B) so we don't rely on '..' \
-              cmake -G Ninja -S /work -B /work/build \
+              # verify nvcc \
+              if [ -x /opt/cuda/bin/nvcc ]; then /opt/cuda/bin/nvcc --version; else echo 'nvcc not found'; fi ; \
+              # set source and build directories \
+              SRC_DIR=/work/src/llama.cpp ; \
+              BUILD_DIR=/work/build ; \
+              mkdir -p \$BUILD_DIR ; \
+              # configure cmake with explicit source/build dirs \
+              cmake -G Ninja -S \$SRC_DIR -B \$BUILD_DIR \
                 -DLLAMA_BUILD_SHARED_LIBS=ON \
                 -DLLAMA_CUDA=ON \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_FLAGS='-static-libstdc++ -static-libgcc' \
                 -DCMAKE_EXE_LINKER_FLAGS='-Wl,-Bsymbolic' ; \
-              cmake --build /work/build --config Release -j$(nproc) ; \
-              # copy artifacts into artifact dir (still inside mounted /work so runner can pick up) \
+              cmake --build \$BUILD_DIR --config Release -j\$(nproc) ; \
+              # copy artifacts \
               mkdir -p /work/artifact_manylinux_cuda ; \
-              find /work/build -type f -name 'libllama*' -o -name 'llama*' -print0 | xargs -0 -I{} cp --parents {} /work/artifact_manylinux_cuda/ || true ; \
+              find \$BUILD_DIR -type f -name 'libllama*' -o -name 'llama*' -print0 | xargs -0 -I{} cp --parents {} /work/artifact_manylinux_cuda/ || true ; \
               cp -v /opt/cuda/lib64/*cudart* /work/artifact_manylinux_cuda/ 2>/dev/null || true ; \
-              # make sure runner user can read them (chown to github runner UID/GID) \
-              # GitHub Actions hosted runners write workspace as uid 1001 in some images; chown to current host uid via env var is not possible inside container,
-              # but making artifacts world readable is safe in CI:
-              chmod -R a+rX /work/artifact_manylinux_cuda || true ; \
               ls -la /work/artifact_manylinux_cuda ; \
             "
-
 
       - name: List artifacts produced
         run: ls -la artifact_manylinux_cuda || true
