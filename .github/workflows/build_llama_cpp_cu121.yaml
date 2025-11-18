@@ -61,7 +61,6 @@ jobs:
           cmake -G "Ninja" -S "$sourceDir" -B . `
             -DLLAMA_BUILD_SHARED_LIBS=ON `
             -DLLAMA_CUDA=ON `
-            -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared `
             -DLLAMA_CURL=OFF `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CUDA_COMPILER="$($env:CMAKE_CUDA_COMPILER)" `
@@ -74,17 +73,43 @@ jobs:
 
           Pop-Location
 
-
-      - name: Collect artifacts
+      - name: Collect artifacts (Windows)
         shell: pwsh
         run: |
-          if (-Not (Test-Path artifact_llama_windows)) { New-Item -ItemType Directory -Path artifact_llama_windows | Out-Null }
+          # ensure artifact dir exists
+          $out = "artifact_llama_windows"
+          if (-Not (Test-Path $out)) { New-Item -ItemType Directory -Path $out | Out-Null }
 
-          $dll = Get-ChildItem -Path build -Recurse -Filter "llama.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $lib = Get-ChildItem -Path build -Recurse -Filter "llama.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          Write-Host "=== Built DLLs / LIBs (searching build/) ==="
+          # Show all dll/lib/pdb in build tree so we can debug what was produced
+          Get-ChildItem -Path build -Recurse -Include "*.dll","*.lib","*.pdb" -File | Sort-Object FullName | ForEach-Object {
+            Write-Host $_.FullName
+          }
 
-          if ($dll) { Copy-Item $dll.FullName -Destination artifact_llama_windows -Force }
-          if ($lib) { Copy-Item $lib.FullName -Destination artifact_llama_windows -Force }
+          # copy llama-related artifacts
+          Get-ChildItem -Path build -Recurse -Filter "llama.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Copying $($_.FullName) -> $out"
+            Copy-Item $_.FullName -Destination $out -Force
+          }
+          Get-ChildItem -Path build -Recurse -Filter "llama.lib" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName -Destination $out -Force
+          }
+          Get-ChildItem -Path build -Recurse -Filter "llama.pdb" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName -Destination $out -Force
+          }
+
+          # copy ggml-related artifacts (dlls/libs/pdbs)
+          $ggmlPatterns = @("ggml*.dll","ggml-base*.dll","ggml-cuda*.dll","ggml*.lib","ggml-base*.lib","ggml*.pdb","ggml-base*.pdb")
+          foreach ($pat in $ggmlPatterns) {
+            Get-ChildItem -Path build -Recurse -Include $pat -File -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "Copying $($_.FullName) -> $out"
+              Copy-Item $_.FullName -Destination $out -Force
+            }
+          }
+
+          Write-Host "=== Artifacts collected ==="
+          Get-ChildItem -Path $out -Recurse | Select-Object FullName, Length | ForEach-Object { Write-Host $_.FullName }
+
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
